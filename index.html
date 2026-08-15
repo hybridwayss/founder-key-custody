@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ma3MnQvq/W+ts2BAaMem2YtsJmepH87suhfb8kYPNDs='; style-src 'sha256-6kRwJbpybgTsNJvtFzFYnzfw3/T3BV4BQAn+Qjg9tb8='; connect-src 'none'; img-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; child-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Offline signing-key custody</title>
+<style>
+:root{
+  --ink:#0d1117; --panel:#151b23; --edge:#243040; --edge-hi:#33445c;
+  --text:#e6edf3; --dim:#8b98a8; --lock:#5a6675;
+  --go:#3fb950; --stop:#f0603a; --key:#e0a33e;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ink);color:var(--text);
+  font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+  -webkit-text-size-adjust:100%}
+body{padding:20px 16px 80px;max-width:720px;margin:0 auto}
+h1{font-size:20px;line-height:1.25;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--dim);font:12px/1.5 var(--mono);margin:0 0 22px;word-break:break-all}
+.step{border:1px solid var(--edge);border-radius:12px;margin:0 0 12px;background:var(--panel);overflow:hidden}
+.step[data-locked="1"]{opacity:.45}
+.head{display:flex;gap:12px;align-items:baseline;padding:14px 16px}
+.n{font:600 12px/1 var(--mono);color:var(--lock);border:1px solid var(--edge-hi);
+  border-radius:5px;padding:5px 7px;flex:none}
+.step[data-locked="0"] .n{color:var(--key);border-color:var(--key)}
+.step[data-done="1"] .n{color:var(--go);border-color:var(--go)}
+.t{font-weight:600;font-size:15px}
+.body{padding:0 16px 16px}
+p{margin:0 0 12px;color:var(--dim);font-size:14px}
+p.on{color:var(--text)}
+button{-webkit-appearance:none;appearance:none;width:100%;min-height:52px;
+  border:1px solid var(--edge-hi);border-radius:10px;background:#1d2733;color:var(--text);
+  font:600 16px/1 -apple-system,system-ui,sans-serif;margin:0 0 10px;padding:16px;
+  cursor:pointer;touch-action:manipulation}
+button.go{background:var(--key);border-color:var(--key);color:#12161c}
+button:disabled{opacity:.4;cursor:default}
+input[type=file]{width:100%;margin:0 0 10px;font-size:14px;color:var(--dim)}
+.out{font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-all;
+  background:#0b1017;border:1px solid var(--edge);border-radius:8px;padding:12px;margin:0 0 10px}
+.out.warn{border-color:var(--key);color:var(--key)}
+.out.bad{border-color:var(--stop);color:var(--stop)}
+.out.good{border-color:var(--go);color:var(--go)}
+.secret{border-color:var(--key)}
+.tag{display:inline-block;font:600 11px/1 var(--mono);letter-spacing:.08em;
+  padding:5px 7px;border-radius:5px;border:1px solid currentColor;margin:0 0 10px}
+.tag.secret{color:var(--key)}
+.note{border:1px solid var(--key);border-radius:8px;padding:10px 12px;margin:0 0 10px;
+  color:var(--key);font:12px/1.5 var(--mono)}
+.hide{display:none}
+.halt{border:1px solid var(--stop);border-radius:12px;padding:20px;background:#1a1012}
+.halt h2{color:var(--stop);font-size:17px;margin:0 0 10px}
+footer{color:var(--lock);font:11px/1.6 var(--mono);margin-top:28px;word-break:break-all}
+@media (prefers-reduced-motion:no-preference){.step{transition:opacity .18s ease}}
+</style>
+</head>
+<body>
+
+<h1>Offline signing-key custody</h1>
+<p class="sub" id="build"></p>
+
+<div id="halt" class="halt hide">
+  <h2>Stopped: wrong execution surface</h2>
+  <div class="out bad" id="haltwhy"></div>
+  <p>Open this page's HTTPS address directly in Safari, as the whole window. Do not open it inside another app's document preview, and do not save it as a local file.</p>
+</div>
+
+<main id="app" class="hide">
+
+  <section class="step" id="s1" data-locked="0" data-done="0">
+    <div class="head"><span class="n">1</span><span class="t">Check this surface</span></div>
+    <div class="body">
+      <div class="out" id="envout">Checking…</div>
+    </div>
+  </section>
+
+  <section class="step" id="s2" data-locked="1" data-done="0">
+    <div class="head"><span class="n">2</span><span class="t">Prove you can save a file</span></div>
+    <div class="body">
+      <p>This downloads a throwaway file with no key material in it, through the exact mechanism the private key will use. If it fails here, it would have failed with your key. Starting this step again relocks everything below it.</p>
+      <button id="b2" disabled>Download the test file</button>
+      <div class="out hide" id="o2"></div>
+    </div>
+  </section>
+
+  <section class="step" id="s3" data-locked="1" data-done="0">
+    <div class="head"><span class="n">3</span><span class="t">Prove you can find it again</span></div>
+    <div class="body">
+      <p>Choose the file you just downloaded. This page compares it byte for byte. A download starting is not proof; this is.</p>
+      <input type="file" id="f3" accept=".json,application/json" disabled>
+      <div class="out hide" id="o3"></div>
+    </div>
+  </section>
+
+  <section class="step" id="s4" data-locked="1" data-done="0">
+    <div class="head"><span class="n">4</span><span class="t">Generate the keypair</span></div>
+    <div class="body">
+      <p>One P-256 keypair, generated in this browser. It exists only in this tab's memory until you save it.</p>
+      <button id="b4" class="go" disabled>Generate keypair</button>
+      <div class="out hide" id="o4"></div>
+    </div>
+  </section>
+
+  <section class="step" id="s5" data-locked="1" data-done="0">
+    <div class="head"><span class="n">5</span><span class="t">Save the private key</span></div>
+    <div class="body">
+      <span class="tag secret">PRIVATE — SAVE, NEVER SEND</span>
+      <p class="on">Saved with Safari’s own download, the same mechanism step 2 proved. It lands in Downloads; move it somewhere you will find it. Do not paste it into any chat, email, or note. It stays on screen until step 6 passes, however many times you tap.</p>
+      <div class="note hide" id="fgwarn"></div>
+      <div class="out secret hide" id="privout"></div>
+      <button id="b5" disabled>Download the private key file</button>
+      <div class="out hide" id="o5"></div>
+    </div>
+  </section>
+
+  <section class="step" id="s6" data-locked="1" data-done="0">
+    <div class="head"><span class="n">6</span><span class="t">Prove the private key is really saved</span></div>
+    <div class="body">
+      <p>Choose the private key file back from Files. This page checks the bytes match, signs with it, verifies with its own public half, and compares fingerprints.</p>
+      <input type="file" id="f6" accept=".json,application/json" disabled>
+      <div class="out hide" id="o6"></div>
+    </div>
+  </section>
+
+  <section class="step" id="s7" data-locked="1" data-done="0">
+    <div class="head"><span class="n">7</span><span class="t">Save what is safe to share</span></div>
+    <div class="body">
+      <p>Two files, neither containing the private key. These are the only things that should leave the device.</p>
+      <button id="b7a" disabled>Save the public key file</button>
+      <button id="b7b" disabled>Save the custody confirmation</button>
+      <div class="out hide" id="o7"></div>
+      <button id="b8" class="hide">Clear the private key from this page</button>
+    </div>
+  </section>
+
+</main>
+
+<footer id="foot"></footer>
+
+<script>
+'use strict';
+(function () {
+  var BUILD = 'CUSTODY-PAGE-1.0.1';
+  var CHALLENGE = 'custody-roundtrip-positive-control';
+
+  function $(id) { return document.getElementById(id); }
+  function show(el, cls, txt) { el.className = 'out ' + cls; el.textContent = txt; }
+  function unlock(id) { var s = $(id); s.dataset.locked = '0'; }
+  function done(id) { var s = $(id); s.dataset.done = '1'; }
+
+  var st = {
+    pre: { text: null, name: null },
+    priv: { jwk: null, text: null, name: null, tp: null },
+    pub: { jwk: null, text: null, name: null },
+    conf: { text: null, name: null }
+  };
+
+  /* ---------- encoding helpers ---------- */
+
+  function b64url(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function sha256url(str) {
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
+      .then(function (buf) { return b64url(new Uint8Array(buf)); });
+  }
+
+  /* RFC 7638 thumbprint for an EC key: lexicographic members, no whitespace. */
+  function thumbprint(jwk) {
+    var canon = '{"crv":' + JSON.stringify(jwk.crv) +
+                ',"kty":' + JSON.stringify(jwk.kty) +
+                ',"x":' + JSON.stringify(jwk.x) +
+                ',"y":' + JSON.stringify(jwk.y) + '}';
+    return sha256url(canon);
+  }
+
+  function readText(file) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(String(r.result)); };
+      r.onerror = function () { rej(new Error('READ_FAILED')); };
+      r.readAsText(file);
+    });
+  }
+
+  /* ---------- saving: must be called straight from a tap ---------- */
+
+  /* Private material uses this path only: Blob + download anchor, never navigator.share.
+     Step 2 exercises this same function, so the preflight tests the real mechanism. */
+  function downloadNow(name, text) {
+    try {
+      var url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = name; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+      return Promise.resolve('DOWNLOAD_OFFERED');
+    } catch (e) {
+      return Promise.resolve('DOWNLOAD_UNAVAILABLE');
+    }
+  }
+
+  /* Secret-free artifacts only. Never used for the private JWK. */
+  function shareOrDownload(name, text) {
+    var file, ok = false;
+    try {
+      file = new File([text], name, { type: 'application/json' });
+      ok = !!(navigator.canShare && navigator.share && navigator.canShare({ files: [file] }));
+    } catch (e) { ok = false; }
+    if (!ok) return downloadNow(name, text);
+    return navigator.share({ files: [file], title: name })
+      .then(function () { return 'SHARE_SHEET_CLOSED'; })
+      .catch(function (e) { return 'SHARE_NOT_COMPLETED (' + (e && e.name ? e.name : 'error') + ')'; });
+  }
+
+  var SAVE_NOTE = '\nThis only means the file was offered. Nothing is proven until you choose it back.';
+
+  /* ---------- step 1: surface ---------- */
+
+  function framed() {
+    try { return window.top !== window.self; } catch (e) { return true; }
+  }
+
+  function checkEnv() {
+    var bad = [], warn = [];
+    if (location.protocol !== 'https:') bad.push('Not served over HTTPS (' + location.protocol + ')');
+    if (framed()) bad.push('Running inside a frame or another app\u2019s preview, not as the whole window');
+    if (!window.isSecureContext) bad.push('Not a secure context');
+    if (!(window.crypto && crypto.subtle)) bad.push('WebCrypto unavailable \u2014 no key can be generated here');
+    if (typeof File !== 'function' || typeof FileReader !== 'function') bad.push('File APIs unavailable');
+    if (window.opener !== null) bad.push('This tab was opened by another page \u2014 open the address in a fresh Safari Private tab instead');
+    if (!(navigator.canShare && navigator.share)) warn.push('Web Share unavailable \u2014 step 7 will download instead. The private key always downloads, so this changes nothing there.');
+
+    $('build').textContent = BUILD + '  \u00b7  ' + location.origin;
+    $('foot').textContent = BUILD + '  \u00b7  no network, no storage, no cookies  \u00b7  ' +
+      'verify the source SHA-256 against the accompanying integrity record before use.';
+
+    if (bad.length) {
+      $('halt').classList.remove('hide');
+      $('haltwhy').textContent = bad.join('\n');
+      return false;
+    }
+    $('app').classList.remove('hide');
+    show($('envout'), 'good',
+      'HTTPS \u00b7 top-level window \u00b7 no opener \u00b7 secure context \u00b7 WebCrypto \u00b7 File APIs' +
+      (warn.length ? '\n\n' + warn.join('\n') : ''));
+    done('s1'); unlock('s2'); $('b2').disabled = false;
+    return true;
+  }
+
+  /* ---------- steps 2 and 3: harmless round trip ---------- */
+
+  function relockPreflight() {
+    ['s3', 's4'].forEach(function (id) { $(id).dataset.locked = '1'; $(id).dataset.done = '0'; });
+    $('s2').dataset.done = '0';
+    $('f3').disabled = true; $('f3').value = '';
+    $('b4').disabled = true;
+    $('o3').classList.add('hide'); $('o4').classList.add('hide');
+  }
+
+  $('b2').addEventListener('click', function () {
+    relockPreflight();
+    var n = new Uint8Array(16);
+    crypto.getRandomValues(n);
+    var nonce = b64url(n);
+    st.pre.text = JSON.stringify({
+      purpose: 'save-and-reimport-preflight',
+      note: 'Throwaway. Contains no key material. Safe to delete after step 3.',
+      nonce: nonce,
+      build: BUILD
+    }, null, 2);
+    st.pre.name = 'custody-preflight-' + nonce.slice(0, 8) + '.json';
+
+    var o = $('o2'); o.classList.remove('hide');
+    show(o, 'warn', 'Downloading ' + st.pre.name + '\u2026');
+    downloadNow(st.pre.name, st.pre.text).then(function (r) {
+      show(o, 'warn', r + '\nFile: ' + st.pre.name + SAVE_NOTE);
+      unlock('s3'); $('f3').disabled = false;
+    });
+  });
+
+  $('f3').addEventListener('change', function (ev) {
+    var f = ev.target.files && ev.target.files[0];
+    var o = $('o3'); o.classList.remove('hide');
+    if (!f) return;
+    readText(f).then(function (t) {
+      if (t !== st.pre.text) {
+        show(o, 'bad', 'MISMATCH \u2014 that is not the file this page just made.\n' +
+          'Choose ' + st.pre.name + '. If it is not in Files, the download did not happen.\n' +
+          'Generate stays locked. Start step 2 again for a fresh test file.');
+        return;
+      }
+      show(o, 'good', 'ROUND TRIP PASS \u2014 saved and read back byte for byte.\nYou can delete that test file now.');
+      done('s2'); done('s3'); unlock('s4'); $('b4').disabled = false;
+    }).catch(function () { show(o, 'bad', 'Could not read that file.'); });
+  });
+
+  /* ---------- step 4: generate ---------- */
+
+  $('b4').addEventListener('click', function () {
+    $('b4').disabled = true;
+    var o = $('o4'); o.classList.remove('hide');
+    show(o, 'warn', 'Generating\u2026');
+
+    crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+      .then(function (kp) {
+        return Promise.all([
+          crypto.subtle.exportKey('jwk', kp.privateKey),
+          crypto.subtle.exportKey('jwk', kp.publicKey)
+        ]);
+      })
+      .then(function (pair) {
+        var pv = pair[0], pb = pair[1];
+        st.priv.jwk = { kty: 'EC', crv: 'P-256', x: pv.x, y: pv.y, d: pv.d, alg: 'ES256', key_ops: ['sign'], ext: true };
+        st.pub.jwk  = { kty: 'EC', crv: 'P-256', x: pb.x, y: pb.y, alg: 'ES256', key_ops: ['verify'], ext: true };
+        return thumbprint(st.pub.jwk);
+      })
+      .then(function (tp) {
+        st.priv.tp = tp;
+        st.priv.text = JSON.stringify(st.priv.jwk, null, 2);
+        st.priv.name = 'founder-signing-key-PRIVATE-' + tp.slice(0, 12) + '.json';
+        st.pub.text = JSON.stringify(st.pub.jwk, null, 2);
+        st.pub.name = 'founder-signing-key-public-' + tp.slice(0, 12) + '.json';
+
+        show(o, 'good', 'Keypair generated.\nFingerprint (RFC 7638): ' + tp);
+        $('privout').classList.remove('hide');
+        $('privout').textContent = st.priv.text;
+        $('b2').disabled = true; $('f3').disabled = true;
+        watchForeground();
+        done('s4'); unlock('s5'); $('b5').disabled = false;
+      })
+      .catch(function (e) {
+        show(o, 'bad', 'Generation failed: ' + (e && e.message ? e.message : 'unknown'));
+        $('b4').disabled = false;
+      });
+  });
+
+  /* ---------- step 5: save private ---------- */
+
+  $('b5').addEventListener('click', function () {
+    var o = $('o5'); o.classList.remove('hide');
+    show(o, 'warn', 'Downloading ' + st.priv.name + '\u2026');
+    downloadNow(st.priv.name, st.priv.text).then(function (r) {
+      show(o, 'warn', r + '\nFile: ' + st.priv.name + SAVE_NOTE +
+        '\nThe key above stays on screen. Tap again if the download did not land.');
+      unlock('s6'); $('f6').disabled = false;
+    });
+  });
+
+  /* ---------- step 6: prove custody ---------- */
+
+  $('f6').addEventListener('change', function (ev) {
+    var f = ev.target.files && ev.target.files[0];
+    var o = $('o6'); o.classList.remove('hide');
+    if (!f) return;
+    show(o, 'warn', 'Checking\u2026');
+
+    var checks = {};
+    readText(f).then(function (t) {
+      checks.bytesIdentical = (t === st.priv.text);
+      if (!checks.bytesIdentical) throw new Error('That file does not match the key on screen. Choose ' + st.priv.name + '.');
+
+      var jwk = JSON.parse(t);
+      checks.shapeValid = (jwk.kty === 'EC' && jwk.crv === 'P-256' && !!jwk.d && !!jwk.x && !!jwk.y);
+      if (!checks.shapeValid) throw new Error('Not a complete EC P-256 private key.');
+
+      return crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign'])
+        .then(function (k) {
+          return crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, k, new TextEncoder().encode(CHALLENGE));
+        })
+        .then(function (sig) {
+          checks.signatureLength64 = (new Uint8Array(sig).length === 64);
+          if (checks.signatureLength64 !== true) {
+            throw new Error('Signature was ' + new Uint8Array(sig).length +
+              ' bytes, not the 64-byte raw R\u2016S required for ES256. Custody STOPPED.');
+          }
+          return crypto.subtle.importKey('jwk',
+            { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y, ext: true },
+            { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify'])
+            .then(function (pk) {
+              return crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pk,
+                sig, new TextEncoder().encode(CHALLENGE));
+            });
+        })
+        .then(function (ok) {
+          checks.privateMatchesPublicPoint = ok;
+          if (!ok) throw new Error('The private value does not correspond to its own public point.');
+          return thumbprint({ kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y });
+        });
+    }).then(function (tp) {
+      checks.fingerprintMatches = (tp === st.priv.tp);
+      if (!checks.fingerprintMatches) throw new Error('Fingerprint mismatch.');
+
+      var required = ['bytesIdentical', 'shapeValid', 'signatureLength64', 'privateMatchesPublicPoint', 'fingerprintMatches'];
+      for (var i = 0; i < required.length; i++) {
+        if (checks[required[i]] !== true) throw new Error('Check ' + required[i] + ' is not true. Custody STOPPED.');
+      }
+
+      st.conf.text = JSON.stringify({
+        schema: 'FOUNDER-KEY-CUSTODY-CONFIRMATION-v1.0.0',
+        build: BUILD,
+        createdAtUtc: new Date().toISOString(),
+        publicJwkThumbprintRfc7638: st.priv.tp,
+        alg: 'ES256', crv: 'P-256', kty: 'EC',
+        publicJwk: st.pub.jwk,
+        privateFileName: st.priv.name,
+        checks: checks,
+        privateKeyDisclosed: false,
+        custodyResult: 'PASS'
+      }, null, 2);
+      st.conf.name = 'founder-key-custody-confirmation-' + st.priv.tp.slice(0, 12) + '.json';
+
+      show($('o6'), 'good',
+        'CUSTODY PASS\n' +
+        '\u00b7 saved file matches byte for byte\n' +
+        '\u00b7 signed with the reimported key\n' +
+        '\u00b7 verified against its own public half\n' +
+        '\u00b7 fingerprint ' + st.priv.tp);
+      stopForeground();
+      done('s5'); done('s6'); unlock('s7');
+      $('b7a').disabled = false; $('b7b').disabled = false;
+      $('b8').classList.remove('hide');
+    }).catch(function (e) {
+      show($('o6'), 'bad', (e && e.message ? e.message : 'Check failed.') +
+        '\nNothing was cleared. The key is still on screen.');
+    });
+  });
+
+  /* ---------- step 7: safe exports ---------- */
+
+  $('b7a').addEventListener('click', function () {
+    var o = $('o7'); o.classList.remove('hide');
+    show(o, 'warn', 'Saving public key\u2026');
+    shareOrDownload(st.pub.name, st.pub.text).then(function (r) { show(o, 'warn', r + '\nFile: ' + st.pub.name); });
+  });
+
+  $('b7b').addEventListener('click', function () {
+    var o = $('o7'); o.classList.remove('hide');
+    show(o, 'warn', 'Saving custody confirmation\u2026');
+    shareOrDownload(st.conf.name, st.conf.text).then(function (r) { show(o, 'warn', r + '\nFile: ' + st.conf.name); });
+  });
+
+  $('b8').addEventListener('click', function () {
+    st.priv.jwk = null; st.priv.text = null;
+    $('privout').textContent = '';
+    $('privout').classList.add('hide');
+    $('b5').disabled = true; $('f6').disabled = true;
+    $('b8').classList.add('hide');
+    show($('o5'), 'good', 'Cleared from this page. Your saved file is untouched.');
+    done('s7');
+  });
+
+  /* Warning only. Backgrounding never clears anything. */
+  var fgHandler = null;
+  function watchForeground() {
+    var w = $('fgwarn');
+    w.classList.remove('hide');
+    w.textContent = 'Keep Safari in the foreground until step 6 passes. iPadOS can discard a backgrounded tab, and the key exists only here until you have proved the saved file.';
+    fgHandler = function () {
+      if (document.visibilityState === 'hidden') return;
+      w.textContent = 'This tab left the foreground. The key is still here and nothing was cleared \u2014 but finish step 6 now, without switching apps again.';
+    };
+    document.addEventListener('visibilitychange', fgHandler);
+  }
+  function stopForeground() {
+    if (fgHandler) document.removeEventListener('visibilitychange', fgHandler);
+    fgHandler = null;
+    $('fgwarn').classList.add('hide');
+  }
+
+  checkEnv();
+})();
+</script>
+</body>
+</html>
